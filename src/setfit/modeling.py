@@ -17,7 +17,12 @@ import requests
 import torch
 import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin, hf_hub_download
+
+from transformers import AutoModel, AutoTokenizer
+from transformers import pipeline
+
 from sentence_transformers import InputExample, SentenceTransformer, models
+
 from sklearn.linear_model import LogisticRegression
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.multioutput import ClassifierChain, MultiOutputClassifier
@@ -511,9 +516,28 @@ class SetFitModel(PyTorchModelHubMixin):
         normalize_embeddings: bool = False,
         **model_kwargs,
     ) -> "SetFitModel":
-        model_body = SentenceTransformer(model_id, cache_folder=cache_dir, use_auth_token=use_auth_token)
-        target_device = model_body._target_device
-        model_body.to(target_device)  # put `model_body` on the target device
+
+        #model_body = SentenceTransformer(model_id, cache_folder=cache_dir, use_auth_token=use_auth_token)
+
+        # rather than loading a SentenceTransformer directly, let's load a Transformer model
+        # and then put together our own SentenceTransformer from this
+        auto_transformer_model = AutoModel.from_pretrained(model_id)
+        transformer_model = models.Transformer(model_id)
+
+        transformer_tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+        # NOTE: This works for a BERT model
+        dim = auto_transformer_model.embeddings.word_embeddings.embedding_dim
+
+        pooling_model = models.Pooling(dim,
+                                       pooling_mode_mean_tokens=True,
+                                       pooling_mode_cls_token=False,
+                                       pooling_mode_max_tokens=False)
+
+        model_body = SentenceTransformer(modules = [transformer_model, pooling_model])
+
+        #target_device = model_body._target_device
+        #model_body.to(target_device)  # put `model_body` on the target device
 
         if os.path.isdir(model_id):
             if MODEL_HEAD_NAME in os.listdir(model_id):
